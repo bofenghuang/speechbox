@@ -10,28 +10,29 @@ from transformers import (BeamSearchScorer, WhisperForConditionalGeneration,
 
 
 class PunctuationRestorer:
-    def __init__(self, model: WhisperForConditionalGeneration, processor: WhisperProcessor):
+    def __init__(self, model: WhisperForConditionalGeneration, processor: WhisperProcessor, punctuations: str = string.punctuation):
         self.processor = processor
         self.tokenizer = processor.tokenizer
         self.model = model
-        self.punctuation = self.get_punctuation_tokens()
+        # self.punctuation = self.get_punctuation_tokens()
+        self.punctuation = self.get_punctuation_tokens(punctuations)
 
     def to(self, device):
         self.model = self.model.to(device)
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_or_path):
-        model = WhisperForConditionalGeneration.from_pretrained(pretrained_model_or_path, low_cpu_mem_usage=True)
+    def from_pretrained(cls, pretrained_model_or_path, punctuations: str = string.punctuation, **model_kwargs):
+        model = WhisperForConditionalGeneration.from_pretrained(pretrained_model_or_path, low_cpu_mem_usage=True, **model_kwargs)
         processor = WhisperProcessor.from_pretrained(pretrained_model_or_path)
-        return cls(model, processor)
+        return cls(model, processor, punctuations)
 
     def set_language(self, language):
         self.model.config.forced_decoder_ids = self.processor.get_decoder_prompt_ids(language=language, task='transcribe')
 
-    def get_punctuation_tokens(self):
+    def get_punctuation_tokens(self, punctuations: str = string.punctuation):
         punctuation_tokens = []
         for i in range(len(self.tokenizer)):
-            if self.tokenizer.convert_ids_to_tokens(i) in list(string.punctuation):
+            if self.tokenizer.convert_ids_to_tokens(i) in list(punctuations):
                 punctuation_tokens.append(i)
         return punctuation_tokens
 
@@ -92,6 +93,9 @@ class PunctuationRestorer:
             "input_features"
         ]
         input_features = input_features.to(device)
+
+        # bh: tmp fix
+        input_features = input_features.to(self.model.dtype)
 
         with torch.no_grad():
             encoder_hidden_states = self.model.model.encoder(input_features).last_hidden_state
@@ -224,11 +228,17 @@ class PunctuationRestorer:
                     token_track[i] = old_token_track[idx]
                 elif not is_word_ended[idx]:
                     if len(old_token_track[idx]) > 1:
-                        selected_index = (all_next_tokens[idx] == beam_next_tokens[i].cpu()).nonzero().flatten().item()
+                        # selected_index = (all_next_tokens[idx] == beam_next_tokens[i].cpu()).nonzero().flatten().item()
+                        # bh: tmp fix, comparing between " d'elle" and "d'ELLE"
+                        selected_index = (all_next_tokens[idx] == beam_next_tokens[i].cpu()).nonzero().flatten().tolist()
                     else:
-                        selected_index = 0
+                        # selected_index = 0
+                        # bh: tmp fix
+                        selected_index = [0]
 
-                    token_track[i] = [old_token_track[idx][selected_index]]
+                    # token_track[i] = [old_token_track[idx][selected_index]]
+                    # bh: tmp fix
+                    token_track[i] = [old_token_track[idx][selected_index_] for selected_index_ in selected_index]
                 else:
                     # if it's a new word, we have to find out which track(s) was chosen
                     token_track[i] = (all_next_tokens[idx] == beam_next_tokens[i].cpu()).nonzero().flatten().tolist()
@@ -289,7 +299,8 @@ class PunctuationRestorer:
         # 10. Decode generated tokens
         orthographic_transcription = self.tokenizer.batch_decode(final_sequences, skip_special_tokens=True)[0]
         # skip first character as it's always an empty space
-        orthographic_transcription = orthographic_transcription[1:]
+        # orthographic_transcription = orthographic_transcription[1:]
+        orthographic_transcription = orthographic_transcription.strip()
 
         return orthographic_transcription, final_probs
 
