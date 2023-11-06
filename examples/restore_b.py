@@ -34,8 +34,8 @@ def main(
     fp16: bool = True,
 ):
 
-    if os.path.exists(output_file_path):
-        os.remove(output_file_path)
+    # if os.path.exists(output_file_path):
+    #     os.remove(output_file_path)
 
     # punctuations = string.punctuation
     # punctuations = re.sub(r"-'", "", string.punctuation)
@@ -72,6 +72,7 @@ def main(
         sampling_rate = example[audio_column_name]["sampling_rate"]
 
         text = re.sub(rf"[{re.escape(punctuations)}]", "", example[text_column_name]).lower()
+        text = re.sub(r"\s+", " ", text).strip()  # replace any successive whitespace characters with a space
 
         # try:
         restored_text, probs = restorer(audio, text, sampling_rate=sampling_rate, num_beams=num_beams)
@@ -104,11 +105,7 @@ def main(
     # print(dataset)
 
     dataset = dataset.remove_columns([audio_column_name])
-    dataset = dataset.map(
-        lambda x: {audio_column_name: x[f"tmp_{audio_column_name}"]},
-        remove_columns=[f"tmp_{audio_column_name}"],
-        num_proc=16,
-    )
+    dataset = dataset.rename_column(f"tmp_{audio_column_name}", audio_column_name)
 
     # dataset.to_json(output_file_path, orient="records", lines=True, force_ascii=False)
     # better handle backslash in path
