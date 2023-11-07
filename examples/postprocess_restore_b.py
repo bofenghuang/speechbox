@@ -32,20 +32,25 @@ def main(
 
     normalizer = FrenchTextNormalizer()
 
+    symbols_to_keep = "'-,.?!:;$%@&#~()/"
+
     def process_function(example):
         s = example["restored_pnc_text"]
         s = normalizer(
             s,
             do_lowercase=False,
             do_ignore_words=False,
-            symbols_to_keep="'-,.?!:;$%@&#~()",
+            symbols_to_keep=symbols_to_keep,
             do_num2text=False,
             do_text2num=True,
         )
-        s = re.sub(rf"(?<=[\.\?!]\s)([{normalizer.kept_chars}])", lambda x: x.group().upper(), s)  # Uppercase 1st non-space character after .?!
         s = re.sub(rf"^([{normalizer.kept_chars}])", lambda x: x.group().upper(), s)  # Uppercase 1st character
-        s = re.sub(r"[,]+$", ".", s)  # replace comma at the end
-        s= re.sub(rf"([{normalizer.kept_chars}])$", r"\1.", s)  # add period if no punctuation at the end
+        s = re.sub(rf"(?<=[\.\?!]\s)([{normalizer.kept_chars}])", lambda x: x.group().upper(), s)  # Uppercase 1st non-space character after .?!
+        s = re.sub(r"[,]+$", ".", s)  # replace comma at the end by period
+        s = re.sub(rf"([{normalizer.kept_chars}])$", r"\1.", s)  # add period if no punctuation at the end
+        s = re.sub(rf"^[{symbols_to_keep}\s]+", "", s)  # remove starting punctuation
+
+        s = re.sub(r"\s+", " ", s).strip()  # replace any successive whitespace characters with a space
         example["text"] = s
         return example
 
